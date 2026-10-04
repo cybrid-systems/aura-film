@@ -1,0 +1,262 @@
+; Aura film world. Soft owns the 24-hour clock, the beats, captions,
+; music params, and the scene graph. A blit may only read SNAP.
+; Soft is not Restricted mode. This file does not spawn fibers and
+; does not stamp a live fiber line.
+;
+; Law (integer milliseconds):
+;   now year = 2026 is the end of the day (displayed 00:00:00.000)
+;   45000 years before now is exactly 20 minutes before that midnight
+;   ms_before = years_ago * 80 / 3
+;   day = 86400000 ms = 3240000 years
+; Cave art at year 2026-45000 therefore falls on 23:40:00.000.
+; Paper, rail, and the personal computer are the same function, not a
+; second table of clock strings.
+
+(define *now-year* 2026)
+(define *day-ms* 86400000)
+(define *span-years* 3240000)
+(define *ms-num* 80)
+(define *ms-den* 3)
+
+(define *frame* 0)
+(define *play-year* 2026)
+(define *active* 0)
+(define *cut-id* 2)
+(define *cut-score* 0)
+(define *cut-reason* "boot")
+(define *cut-world* "host-sequential")
+(define *show-caption* 1)
+
+(define (nth xs i)
+  (if (or (null? xs) (< i 0))
+      0
+      (if (= i 0)
+          (car xs)
+          (nth (cdr xs) (- i 1)))))
+
+(define (count xs)
+  (let loop ((ys xs) (n 0))
+    (if (null? ys)
+        n
+        (loop (cdr ys) (+ n 1)))))
+
+; id, year, scene, tone-hz, tempo, caption
+; scene: 0 wild, 1 hand, 2 paper, 3 rail, 4 terminal, 5 sphere
+(define *beats*
+  (list
+    (list "origin" -3237974 0 0 48 "WILDERNESS")
+    (list "cave" -42974 1 196 60 "ART - A HAND ON THE CAVE WALL. I WAS HERE.")
+    (list "paper" 105 2 262 84 "PAPER - 105 CE")
+    (list "rail" 1825 3 330 120 "RAIL - 1825")
+    (list "pc" 1977 4 440 168 "PC - 1977")
+    (list "here" 2026 5 523 96 "YOU ARE HERE")))
+
+(define (film:beat i) (nth *beats* i))
+(define (film:beat-id i) (nth (film:beat i) 0))
+(define (film:beat-year i) (nth (film:beat i) 1))
+(define (film:beat-scene i) (nth (film:beat i) 2))
+(define (film:beat-tone i) (nth (film:beat i) 3))
+(define (film:beat-tempo i) (nth (film:beat i) 4))
+(define (film:beat-caption i) (nth (film:beat i) 5))
+(define (film:beat-count) (count *beats*))
+
+(define (film:scene-name n)
+  (cond ((= n 0) "wild")
+        ((= n 1) "hand")
+        ((= n 2) "paper")
+        ((= n 3) "rail")
+        ((= n 4) "terminal")
+        ((= n 5) "sphere")
+        (#t "wild")))
+
+(define (film:cut-name id)
+  (if (= id 1) "austere" "dense"))
+
+(define (film:years-ago year)
+  (- *now-year* year))
+
+(define (film:ms-before year)
+  (let ((ago (film:years-ago year)))
+    (if (<= ago 0)
+        0
+        (quotient (* ago *ms-num*) *ms-den*))))
+
+(define (film:clock-ms year)
+  (let ((before (film:ms-before year)))
+    (if (>= before *day-ms*)
+        0
+        (- *day-ms* before))))
+
+(define (film:progress-ppm year)
+  (quotient (* (film:clock-ms year) 1000) 86400))
+
+(define (film:hms year)
+  (let* ((raw (film:clock-ms year))
+         (shown (if (= raw *day-ms*) 0 raw))
+         (whole (quotient shown 1000))
+         (ms (modulo shown 1000))
+         (h (quotient whole 3600))
+         (rem (modulo whole 3600))
+         (m (quotient rem 60))
+         (s (modulo rem 60)))
+    (list h m s ms)))
+
+(define (film:pad2 n)
+  (if (< n 10) (display "0") 0)
+  (display (number->string n)))
+
+(define (film:pad3 n)
+  (if (< n 10)
+      (display "00")
+      (if (< n 100) (display "0") 0))
+  (display (number->string n)))
+
+(define (film:show-hms year)
+  (let ((parts (film:hms year)))
+    (film:pad2 (nth parts 0))
+    (display ":")
+    (film:pad2 (nth parts 1))
+    (display ":")
+    (film:pad2 (nth parts 2))
+    (display ".")
+    (film:pad3 (nth parts 3))))
+
+(define (film:active-index year)
+  (let loop ((i 0) (best 0))
+    (if (>= i (film:beat-count))
+        best
+        (if (<= (film:beat-year i) year)
+            (loop (+ i 1) i)
+            (loop (+ i 1) best)))))
+
+; Two cuts, scored on the caller. No fiber is spawned.
+; Austere wants the caption only on an exact beat (score 3 there, else 0).
+; Dense always holds the current scene caption (score 1).
+; Higher score wins. Off-beat, dense holds the scene. On-beat, austere wins.
+(define (film:score-austere on-beat)
+  (if (= on-beat 1) 3 0))
+
+(define (film:score-dense on-beat)
+  1)
+
+(define (film:select-cut! on-beat)
+  (let ((a (film:score-austere on-beat))
+        (d (film:score-dense on-beat)))
+    (set! *cut-world* "host-sequential")
+    (if (>= a d)
+        (begin
+          (set! *cut-id* 1)
+          (set! *cut-score* a)
+          (set! *cut-reason* "on_beat")
+          (set! *show-caption* on-beat)
+          a)
+        (begin
+          (set! *cut-id* 2)
+          (set! *cut-score* d)
+          (set! *cut-reason* "hold_scene")
+          (set! *show-caption* 1)
+          d))))
+
+(define (film:seek-year! year)
+  (set! *play-year* year)
+  (set! *active* (film:active-index year))
+  (film:select-cut!
+    (if (= year (film:beat-year *active*)) 1 0))
+  *active*)
+
+(define (film:evidence!)
+  (display "BEAT id=")
+  (display (film:beat-id *active*))
+  (display " year=")
+  (display (number->string *play-year*))
+  (display " clock=")
+  (film:show-hms *play-year*)
+  (display " scene=")
+  (display (film:scene-name (film:beat-scene *active*)))
+  (display " tone=")
+  (display (number->string (film:beat-tone *active*)))
+  (display " cut=")
+  (display (film:cut-name *cut-id*))
+  (display " reason=")
+  (display *cut-reason*)
+  (display " caption=")
+  (display (film:beat-caption *active*))
+  (newline))
+
+(define (film:snap!)
+  (let* ((year *play-year*)
+         (idx *active*)
+         (parts (film:hms year))
+         (scene (film:beat-scene idx)))
+    (display "SNAP v1")
+    (newline)
+    (display "FRAME ")
+    (display (number->string *frame*))
+    (newline)
+    (display "CLOCK ")
+    (film:show-hms year)
+    (newline)
+    (display "H ")
+    (display (number->string (nth parts 0)))
+    (newline)
+    (display "M ")
+    (display (number->string (nth parts 1)))
+    (newline)
+    (display "S ")
+    (display (number->string (nth parts 2)))
+    (newline)
+    (display "SUBMS ")
+    (display (number->string (nth parts 3)))
+    (newline)
+    (display "AT_NOW ")
+    (display (number->string (if (= year *now-year*) 1 0)))
+    (newline)
+    (display "YEAR ")
+    (display (number->string year))
+    (newline)
+    (display "BEAT ")
+    (display (film:beat-id idx))
+    (newline)
+    (display "SCENE ")
+    (display (film:scene-name scene))
+    (newline)
+    (display "CAPTION ")
+    (display (film:beat-caption idx))
+    (newline)
+    (display "TONE ")
+    (display (number->string (film:beat-tone idx)))
+    (newline)
+    (display "TEMPO ")
+    (display (number->string (film:beat-tempo idx)))
+    (newline)
+    (display "PROGRESS ")
+    (display (number->string (film:progress-ppm year)))
+    (newline)
+    (display "SHOW_CAPTION ")
+    (display (number->string *show-caption*))
+    (newline)
+    (display "CUT ")
+    (display (film:cut-name *cut-id*))
+    (newline)
+    (display "CUT_REASON ")
+    (display *cut-reason*)
+    (newline)
+    (display "CUT_SCORE ")
+    (display (number->string *cut-score*))
+    (newline)
+    (display "NODES clock bar caption glyph")
+    (newline)
+    (display "GLYPH ")
+    (display (film:scene-name scene))
+    (newline)
+    (display "WORLD line=")
+    (display *cut-world*)
+    (newline)
+    (display "EXPLAIN mid=")
+    (display (number->string idx))
+    (display " reason=")
+    (display *cut-reason*)
+    (newline)
+    (display "END")
+    (newline)
+    1))
