@@ -1,0 +1,14 @@
+{
+  "label": "film-m0",
+  "expect": "BEAT id=cave clock=23:40:00.000\nBEAT id=here clock=00:00:00.000\nYOU ARE HERE\nFILM_M0_OK",
+  "expect_res": [
+    "BEAT id=cave clock=23:40:00\\.000",
+    "BEAT id=here clock=00:00:00\\.000",
+    "YOU ARE HERE",
+    "FILM_M0_OK"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(film:clock-ms(\\s|\\))"
+  ],
+  "user_extra": "Implement (define (film:clock-ms year) ...) so year -42974 (45000 years before 2026) is 23:40:00.000 and year 2026 is 00:00:00.000. Use ms_before = years_ago * 80 / 3 integer division over a 86400000 ms day. Print the four lines. Do not only hardcode the display strings. No extra prose outside the code fence."
+}

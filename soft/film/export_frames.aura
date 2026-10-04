@@ -1,0 +1,21 @@
+; Headless frame export. Soft seeks, then prints SNAP blocks.
+; The blit must not invent beats.
+(load "/workspace/aura-film/soft/film/world.aura")
+
+(define *years*
+  (list -3237974 -2000000 -1000000 -42974 -10000
+        105 1000 1825 1900 1977 2000 2026))
+
+(let loop ((i 0))
+  (if (>= i (count *years*))
+      (begin
+        (display "FILM_EXPORT_FRAMES=")
+        (display (number->string i))
+        (newline)
+        (display "FILM_EXPORT_OK")
+        (newline))
+      (begin
+        (set! *frame* i)
+        (film:seek-year! (nth *years* i))
+        (film:snap!)
+        (loop (+ i 1)))))

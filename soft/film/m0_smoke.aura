@@ -1,0 +1,101 @@
+; M0 dogfood: human invention history compressed into one 24-hour clock.
+; Prints beat evidence from film:clock-ms, then one SNAP, then FILM_M0_OK.
+(load "/workspace/aura-film/soft/film/world.aura")
+
+(define *fail* 0)
+
+(define (expect tag got want)
+  (display tag)
+  (display "=")
+  (display (number->string got))
+  (if (= got want)
+      (display " OK")
+      (begin
+        (display " WANT=")
+        (display (number->string want))
+        (set! *fail* (+ *fail* 1))))
+  (newline)
+  got)
+
+(define (part year i)
+  (nth (film:hms year) i))
+
+; Off a named beat the held scene wins. Dense, not austere.
+(film:seek-year! -1000000)
+(film:evidence!)
+(expect "WILD_CUT" *cut-id* 2)
+(expect "WILD_SCENE" (film:beat-scene *active*) 0)
+(expect "WILD_TONE" (film:beat-tone *active*) 0)
+
+(film:seek-year! -3237974)
+(film:evidence!)
+(expect "ORIGIN_RAW" (film:clock-ms -3237974) 0)
+(expect "ORIGIN_BEFORE" (film:ms-before -3237974) 86400000)
+
+(film:seek-year! -42974)
+(film:evidence!)
+(expect "CAVE_AGO" (film:years-ago -42974) 45000)
+(expect "CAVE_BEFORE" (film:ms-before -42974) 1200000)
+(expect "CAVE_RAW" (film:clock-ms -42974) 85200000)
+(expect "CAVE_H" (part -42974 0) 23)
+(expect "CAVE_M" (part -42974 1) 40)
+(expect "CAVE_S" (part -42974 2) 0)
+(expect "CAVE_MS" (part -42974 3) 0)
+(expect "CAVE_SCENE" (film:beat-scene *active*) 1)
+(expect "CAVE_TONE" (film:beat-tone *active*) 196)
+(expect "CAVE_CUT" *cut-id* 1)
+
+(film:seek-year! 105)
+(film:evidence!)
+(expect "PAPER_S" (part 105 2) 8)
+(expect "PAPER_MS" (part 105 3) 774)
+(expect "PAPER_SCENE" (film:beat-scene *active*) 2)
+(expect "PAPER_H" (part 105 0) 23)
+(expect "PAPER_M" (part 105 1) 59)
+
+(film:seek-year! 1825)
+(film:evidence!)
+(expect "RAIL_S" (part 1825 2) 54)
+(expect "RAIL_MS" (part 1825 3) 640)
+(expect "RAIL_SCENE" (film:beat-scene *active*) 3)
+
+(film:seek-year! 1977)
+(film:evidence!)
+(expect "PC_S" (part 1977 2) 58)
+(expect "PC_MS" (part 1977 3) 694)
+(expect "PC_SCENE" (film:beat-scene *active*) 4)
+
+(film:seek-year! 2026)
+(film:evidence!)
+(expect "HERE_RAW" (film:clock-ms 2026) 86400000)
+(expect "HERE_H" (part 2026 0) 0)
+(expect "HERE_M" (part 2026 1) 0)
+(expect "HERE_S" (part 2026 2) 0)
+(expect "HERE_MS" (part 2026 3) 0)
+(expect "HERE_PPM" (film:progress-ppm 2026) 1000000)
+(expect "HERE_SCENE" (film:beat-scene *active*) 5)
+(expect "HERE_TONE" (film:beat-tone *active*) 523)
+
+(expect "ORDER"
+  (if (and (< (film:clock-ms -3237974) (film:clock-ms -42974))
+           (and (< (film:clock-ms -42974) (film:clock-ms 105))
+                (and (< (film:clock-ms 105) (film:clock-ms 1825))
+                     (and (< (film:clock-ms 1825) (film:clock-ms 1977))
+                          (< (film:clock-ms 1977) (film:clock-ms 2026))))))
+      1
+      0)
+  1)
+
+(display "WORLD line=")
+(display *cut-world*)
+(newline)
+
+(if (= *fail* 0)
+    (begin
+      (set! *frame* 0)
+      (film:snap!)
+      (display "FILM_M0_OK")
+      (newline))
+    (begin
+      (display "FILM_M0_FAIL")
+      (newline)))
